@@ -1,0 +1,310 @@
+openapi: "3.0.3"
+info:
+  title: TFT Meta Advisor API
+  version: "0.1.0"
+  description: TFT 메타 분석 백엔드 API
+
+x-environment-variables:
+  DATABASE_URL:
+    description: PostgreSQL async connection string
+    k8s-secret: tft-meta-secret
+    local-example: postgresql+asyncpg://tft_user:password@localhost:5432/tft_meta
+  RIOT_API_KEY:
+    description: Riot Games API key
+    k8s-secret: tft-meta-secret
+  REDIS_URL:
+    description: Redis connection string
+    k8s-secret: tft-meta-secret
+    local-example: redis://localhost:6379
+  OPENROUTER_API_KEY:
+    description: OpenRouter API key (https://openrouter.ai)
+    k8s-secret: tft-meta-secret
+  OPENROUTER_MODEL:
+    description: OpenRouter model ID
+    k8s-configmap: tft-meta-config
+    default: meta-llama/llama-3.3-70b-instruct:free
+  # PATCH_VERSION 제거 — Data Dragon API에서 동적으로 조회
+  SLACK_WEBHOOK_URL:
+    description: Slack webhook for pipeline alerts
+    k8s-secret: tft-meta-secret
+
+x-docker:
+  image: tft-meta-api
+  port: 8000
+  dockerfile: backend/Dockerfile
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: http://tft-meta.local
+    description: K3s cluster (Ingress)
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: K3s liveness probe — includes DB connection status
+      operationId: health
+      tags: [health]
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /api/v1/comps:
+    get:
+      summary: List recommended comps
+      operationId: listComps
+      tags: [comps]
+      parameters:
+        - name: tier
+          in: query
+          schema:
+            type: string
+            enum: [S, A, B, C]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of comp summaries (cached 30 min)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompSummary"
+
+  /api/v1/comps/{comp_id}:
+    get:
+      summary: Comp detail
+      operationId: getComp
+      tags: [comps]
+      parameters:
+        - name: comp_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full comp detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompDetail"
+        "404":
+          description: Not found
+
+  /api/v1/comps/{comp_id}/board:
+    get:
+      summary: Board positioning data for a comp
+      operationId: getCompBoard
+      tags: [comps]
+      parameters:
+        - name: comp_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Board render data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+
+  /api/v1/champions:
+    get:
+      summary: List all champions with item guides
+      operationId: listChampions
+      tags: [champions]
+      responses:
+        "200":
+          description: Champion list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Champion"
+
+  /api/v1/augments:
+    get:
+      summary: List augments
+      operationId: listAugments
+      tags: [augments]
+      parameters:
+        - name: comp_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Augment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Augment"
+
+  /api/v1/meta/summary:
+    get:
+      summary: Today's AI meta summary
+      operationId: metaSummary
+      tags: [meta]
+      responses:
+        "200":
+          description: Meta summary (cached 6 hours)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetaSummary"
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        db_connected:
+          type: boolean
+        version:
+          type: string
+
+    CompSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tier:
+          type: string
+          enum: [S, A, B, C]
+        win_rate:
+          type: number
+        top4_rate:
+          type: number
+        avg_placement:
+          type: number
+        play_rate:
+          type: number
+        sample_count:
+          type: integer
+        patch_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    CompDetail:
+      allOf:
+        - $ref: "#/components/schemas/CompSummary"
+        - type: object
+          properties:
+            core_units:
+              type: object
+            board_positions:
+              type: array
+              items:
+                type: object
+            recommended_augments:
+              type: object
+            entry_conditions:
+              type: array
+              items:
+                type: string
+            ai_summary:
+              type: string
+              nullable: true
+
+    Board:
+      type: object
+      properties:
+        comp_id:
+          type: string
+          format: uuid
+        comp_name:
+          type: string
+        board_positions:
+          type: array
+          items:
+            type: object
+            properties:
+              row:
+                type: integer
+              col:
+                type: integer
+              champion_id:
+                type: string
+              items:
+                type: array
+                items:
+                  type: string
+
+    Champion:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cost:
+          type: integer
+        traits:
+          type: array
+        best_items:
+          type: object
+        item_reasoning:
+          type: object
+        image_url:
+          type: string
+          nullable: true
+
+    Augment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tier:
+          type: string
+          enum: [Silver, Gold, Prismatic]
+        description:
+          type: string
+          nullable: true
+        image_url:
+          type: string
+          nullable: true
+        comp_synergy:
+          type: array
+
+    MetaSummary:
+      type: object
+      properties:
+        patch_version:
+          type: string
+        generated_at:
+          type: string
+        top_comps:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompSummary"
+        ai_summary:
+          type: string

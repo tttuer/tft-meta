@@ -1,0 +1,95 @@
+# ============================================================
+# 환경변수 / 시크릿 — 절대 커밋 금지
+# ============================================================
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+
+# ============================================================
+# Python / uv
+# ============================================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.uv/
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# ============================================================
+# Alembic
+# ============================================================
+# 버전 파일은 커밋하되 캐시는 제외
+alembic/__pycache__/
+
+# ============================================================
+# Docker
+# ============================================================
+*.dockerenv
+
+# ============================================================
+# Flutter / Dart
+# ============================================================
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/build/
+flutter_app/.pub-cache/
+flutter_app/.pub/
+flutter_app/android/.gradle/
+flutter_app/android/local.properties
+flutter_app/android/key.properties
+flutter_app/android/app/google-services.json
+flutter_app/ios/.symlinks/
+flutter_app/ios/Pods/
+flutter_app/ios/Podfile.lock
+flutter_app/ios/Flutter/flutter_export_environment.sh
+flutter_app/ios/Runner/GoogleService-Info.plist
+flutter_app/macos/Pods/
+flutter_app/macos/Podfile.lock
+*.apk
+*.aab
+*.ipa
+
+# ============================================================
+# IDE / 에디터
+# ============================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# K3s / Kubernetes — 시크릿 매니페스트 제외
+# ============================================================
+k8s/**/*secret*.yaml
+k8s/**/*Secret*.yaml
+
+# ============================================================
+# 로그 / 임시 파일
+# ============================================================
+*.log
+*.tmp
+*.bak
+logs/
