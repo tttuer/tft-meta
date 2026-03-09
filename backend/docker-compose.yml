@@ -18,6 +18,8 @@ services:
 
   db:
     image: postgres:15-alpine
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: tft_user
       POSTGRES_PASSWORD: password
@@ -40,6 +42,100 @@ services:
       timeout: 3s
       retries: 10
 
+  # ---------------------------------------------------------------------------
+  # Airflow — 기존 PostgreSQL 재사용 (별도 DB: airflow)
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    image: apache/airflow:2.9.2-python3.11
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname TFT \
+          --lastname Admin \
+          --role Admin \
+          --email admin@tft-meta.local || true
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://tft_user:password@db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__WEBSERVER__SECRET_KEY: "tft-meta-airflow-secret"
+      PYTHONPATH: /opt/airflow
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./pipeline:/opt/airflow/dags
+      - ./app:/opt/airflow/app
+      - airflow_logs:/opt/airflow/logs
+
+  airflow-webserver:
+    image: apache/airflow:2.9.2-python3.11
+    command: webserver
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://tft_user:password@db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__WEBSERVER__SECRET_KEY: "tft-meta-airflow-secret"
+      # 파이프라인 태스크에서 사용하는 환경변수
+      DATABASE_URL: postgresql+asyncpg://tft_user:password@db:5432/tft_meta
+      REDIS_URL: redis://redis:6379
+      PYTHONPATH: /opt/airflow
+    env_file:
+      - .env
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./pipeline:/opt/airflow/dags
+      - ./app:/opt/airflow/app
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.2-python3.11
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://tft_user:password@db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__WEBSERVER__SECRET_KEY: "tft-meta-airflow-secret"
+      # 파이프라인 태스크에서 사용하는 환경변수
+      DATABASE_URL: postgresql+asyncpg://tft_user:password@db:5432/tft_meta
+      REDIS_URL: redis://redis:6379
+      PYTHONPATH: /opt/airflow
+    env_file:
+      - .env
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    volumes:
+      - ./pipeline:/opt/airflow/dags
+      - ./app:/opt/airflow/app
+      - airflow_logs:/opt/airflow/logs
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
+  airflow_logs:

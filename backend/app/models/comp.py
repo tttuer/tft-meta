@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, Float, Integer, String, Text, Timestamp
+from sqlalchemy import DateTime, Enum, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,4 +25,4 @@ class Comp(Base):
     entry_conditions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     patch_version: Mapped[str] = mapped_column(String, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(Timestamp, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)

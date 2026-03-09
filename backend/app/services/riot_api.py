@@ -75,6 +75,13 @@ async def get_challenger_summoners(region: str = "kr") -> list[dict]:
     return data.get("entries", [])
 
 
+async def get_grandmaster_summoners(region: str = "kr") -> list[dict]:
+    base = BASE_URLS[region]
+    url = f"{base}/tft/league/v1/grandmaster?queue=RANKED_TFT"
+    data = await _request(url)
+    return data.get("entries", [])
+
+
 async def get_master_summoners(region: str = "kr") -> list[dict]:
     base = BASE_URLS[region]
     url = f"{base}/tft/league/v1/master?queue=RANKED_TFT"

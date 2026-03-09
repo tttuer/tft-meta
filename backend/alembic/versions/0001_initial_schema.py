@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0001"
@@ -18,6 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Raw SQL로 타입 생성 — sa.Enum 사용 시 Base.metadata에 등록된 인스턴스와
+    # 충돌하여 create_type=False가 무시되는 문제를 방지
     op.execute("CREATE TYPE tier_enum AS ENUM ('S', 'A', 'B', 'C')")
     op.execute("CREATE TYPE augment_tier_enum AS ENUM ('Silver', 'Gold', 'Prismatic')")
 
@@ -25,16 +28,16 @@ def upgrade() -> None:
         "comps",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(), nullable=False),
-        sa.Column("tier", sa.Enum("S", "A", "B", "C", name="tier_enum"), nullable=False),
+        sa.Column("tier", PgEnum(name="tier_enum", create_type=False), nullable=False),
         sa.Column("win_rate", sa.Float(), nullable=False, server_default="0"),
         sa.Column("top4_rate", sa.Float(), nullable=False, server_default="0"),
         sa.Column("avg_placement", sa.Float(), nullable=False, server_default="4"),
         sa.Column("play_rate", sa.Float(), nullable=False, server_default="0"),
         sa.Column("sample_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("core_units", postgresql.JSONB(), nullable=False, server_default="'{}'"),
-        sa.Column("board_positions", postgresql.JSONB(), nullable=False, server_default="'[]'"),
-        sa.Column("recommended_augments", postgresql.JSONB(), nullable=False, server_default="'{}'"),
-        sa.Column("entry_conditions", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column("core_units", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("board_positions", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
+        sa.Column("recommended_augments", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("entry_conditions", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
         sa.Column("ai_summary", sa.Text(), nullable=True),
         sa.Column("patch_version", sa.String(), nullable=False),
         sa.Column("updated_at", sa.TIMESTAMP(), nullable=False),
@@ -45,9 +48,9 @@ def upgrade() -> None:
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("cost", sa.Integer(), nullable=False),
-        sa.Column("traits", postgresql.JSONB(), nullable=False, server_default="'[]'"),
-        sa.Column("best_items", postgresql.JSONB(), nullable=False, server_default="'{}'"),
-        sa.Column("item_reasoning", postgresql.JSONB(), nullable=False, server_default="'{}'"),
+        sa.Column("traits", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
+        sa.Column("best_items", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("item_reasoning", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("image_url", sa.String(), nullable=True),
     )
 
@@ -56,7 +59,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("components", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column("components", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
         sa.Column("image_url", sa.String(), nullable=True),
         sa.Column("is_component", sa.Boolean(), nullable=False, server_default="false"),
     )
@@ -65,17 +68,17 @@ def upgrade() -> None:
         "augments",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("name", sa.String(), nullable=False),
-        sa.Column("tier", sa.Enum("Silver", "Gold", "Prismatic", name="augment_tier_enum"), nullable=False),
+        sa.Column("tier", PgEnum(name="augment_tier_enum", create_type=False), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("image_url", sa.String(), nullable=True),
-        sa.Column("comp_synergy", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column("comp_synergy", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
     )
 
     op.create_table(
         "match_raw",
         sa.Column("match_id", sa.String(), primary_key=True),
         sa.Column("region", sa.String(), nullable=False),
-        sa.Column("participants", postgresql.JSONB(), nullable=False, server_default="'[]'"),
+        sa.Column("participants", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'")),
         sa.Column("patch_version", sa.String(), nullable=False),
         sa.Column("collected_at", sa.TIMESTAMP(), nullable=False),
     )

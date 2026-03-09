@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Timestamp
+from sqlalchemy import DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,4 +14,4 @@ class MatchRaw(Base):
     region: Mapped[str] = mapped_column(String, nullable=False)
     participants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     patch_version: Mapped[str] = mapped_column(String, nullable=False)
-    collected_at: Mapped[datetime] = mapped_column(Timestamp, nullable=False, default=datetime.utcnow)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
