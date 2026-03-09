@@ -58,12 +58,6 @@ cd backend
 uv run python test_riot_api.py
 ```
 
-### 8. Docker 이미지 빌드
-
-```bash
-docker build -t tft-meta-api ./backend
-```
-
 ## API 문서
 
 로컬 실행 후 http://localhost:8000/docs (Swagger UI)
@@ -75,4 +69,13 @@ backend/         FastAPI 백엔드, Alembic 마이그레이션
 pipeline/        Airflow DAG (STEP 2에서 확장)
 k8s/             K3s 배포 매니페스트 (STEP 5)
 contracts/       에이전트 간 공유 계약 (api-spec.yaml)
+```
+
+## K3s 배포용 이미지 빌드 (STEP 5)
+
+`docker compose up -d`는 내부적으로 이미지를 자동 빌드하므로 로컬 개발 시 별도 빌드가 불필요합니다.
+K3s 배포를 위해 이미지를 직접 빌드할 때만 사용하세요.
+
+```bash
+docker build -t tft-meta-api ./backend
 ```
