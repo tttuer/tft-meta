@@ -9,8 +9,9 @@
 동시 요청: asyncio.Semaphore(10)
 
 CLI:
-  python fetch_matches.py --region kr
-  python fetch_matches.py --region kr --dry-run
+  python -m pipeline.fetch_matches --region kr
+  python -m pipeline.fetch_matches --region kr --dry-run
+  python -m pipeline.fetch_matches --region kr --limit 10   # 테스트용: 소환사 10명만
 """
 import argparse
 import asyncio
@@ -95,6 +96,7 @@ async def fetch_and_store_region(
     region: str,
     patch_version: str,
     dry_run: bool = False,
+    limit: int | None = None,
 ) -> dict:
     """
     한 리전의 마스터+ 소환사 매치 데이터를 수집·저장.
@@ -108,6 +110,10 @@ async def fetch_and_store_region(
     if not summoners:
         logger.warning("[%s] 소환사 목록이 비어 있습니다.", region)
         return stats
+
+    if limit is not None:
+        summoners = summoners[:limit]
+        logger.info("[%s] --limit 적용: %d명으로 제한", region, len(summoners))
 
     # 각 소환사의 매치 ID 수집 (Semaphore로 동시성 제어)
     async def _get_ids_for_summoner(summoner: dict) -> list[str]:
@@ -176,13 +182,18 @@ async def fetch_and_store_region(
     return stats
 
 
-async def run(regions: list[str] | None = None, dry_run: bool = False) -> int:
+async def run(
+    regions: list[str] | None = None,
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> int:
     """
     Airflow DAG에서 호출하는 진입점.
 
     Args:
         regions: 수집할 리전 목록. None이면 ["kr", "na1", "euw1"] 전체 실행.
         dry_run: True이면 실제 DB 저장 없이 카운트만 출력.
+        limit: 리전당 수집할 최대 소환사 수. None이면 전체.
 
     Returns:
         총 저장된 매치 수.
@@ -191,10 +202,10 @@ async def run(regions: list[str] | None = None, dry_run: bool = False) -> int:
         regions = ["kr", "na1", "euw1"]
 
     patch_version = await get_latest_patch_version()
-    logger.info("패치 버전: %s / 대상 리전: %s", patch_version, regions)
+    logger.info("패치 버전: %s / 대상 리전: %s / limit: %s", patch_version, regions, limit)
 
     region_stats = await asyncio.gather(
-        *[fetch_and_store_region(r, patch_version, dry_run=dry_run) for r in regions]
+        *[fetch_and_store_region(r, patch_version, dry_run=dry_run, limit=limit) for r in regions]
     )
 
     total_stored = 0
@@ -254,6 +265,13 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="실제 저장 없이 카운트만 출력",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="수집할 최대 소환사 수 (테스트용, 기본값: 제한 없음)",
+    )
     return parser.parse_args()
 
 
@@ -266,6 +284,6 @@ if __name__ == "__main__":
     args = _parse_args()
     target_regions = ["kr", "na1", "euw1"] if args.region == "all" else [args.region]
 
-    total = asyncio.run(run(regions=target_regions, dry_run=args.dry_run))
+    total = asyncio.run(run(regions=target_regions, dry_run=args.dry_run, limit=args.limit))
     logger.info("완료. 총 저장 매치: %d", total)
     sys.exit(0)

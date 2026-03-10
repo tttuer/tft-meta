@@ -14,8 +14,10 @@
 승률 통계: win_rate / top4_rate / avg_placement / play_rate
 
 CLI:
-  python analyze_comps.py --date yesterday
-  python analyze_comps.py --date 2024-01-15
+  python -m pipeline.analyze_comps --date yesterday
+  python -m pipeline.analyze_comps --date today
+  python -m pipeline.analyze_comps --date 2024-01-15
+  python -m pipeline.analyze_comps --date today --min-samples 5   # 테스트용
 """
 import argparse
 import asyncio
@@ -358,10 +360,14 @@ async def _upsert_comps(comps_data: list[dict], patch_version: str) -> int:
 # Airflow 태스크 진입점
 # ---------------------------------------------------------------------------
 
-async def cluster_and_store(run_date: str) -> int:
+async def cluster_and_store(run_date: str, min_samples: int = MIN_SAMPLE_COUNT) -> int:
     """
     Airflow cluster_comps 태스크 진입점.
     match_raw 데이터를 클러스터링하여 집계 결과를 comps 테이블에 임시 저장.
+
+    Args:
+        run_date: 분석 날짜 (YYYY-MM-DD)
+        min_samples: 컴프로 인정할 최소 샘플 수 (테스트 시 낮게 설정 가능)
 
     Returns:
         생성된 클러스터(컴프) 수.
@@ -370,18 +376,22 @@ async def cluster_and_store(run_date: str) -> int:
     matches = await _load_matches_for_date(run_date)
 
     if not matches:
-        logger.warning("[cluster_and_store] run_date=%s 매치 없음", run_date)
+        logger.warning("[cluster_and_store] run_date=%s 매치 없음. 전체 패치 데이터로 폴백합니다.", run_date)
+        matches = await _load_matches_for_patch(patch_version)
+
+    if not matches:
+        logger.warning("[cluster_and_store] 패치 %s 매치도 없음. 종료.", patch_version)
         return 0
 
     all_participants: list[dict] = []
     for m in matches:
         all_participants.extend(m.participants)
 
-    logger.info("[cluster_and_store] 총 참가자: %d", len(all_participants))
+    logger.info("[cluster_and_store] 총 참가자: %d (min_samples=%d)", len(all_participants), min_samples)
 
     clusters = _cluster_participants(all_participants)
-    # MIN_SAMPLE_COUNT 미만 제거
-    clusters = [c for c in clusters if len(c["participants"]) >= MIN_SAMPLE_COUNT]
+    # min_samples 미만 제거
+    clusters = [c for c in clusters if len(c["participants"]) >= min_samples]
     # 상위 TOP_COMP_COUNT 선정 (win_rate 기준)
     total_participants = len(all_participants)
 
@@ -485,8 +495,10 @@ async def generate_summaries_for_top_comps(run_date: str) -> int:
             )
             comp.ai_summary = summary
             updated += 1
+            await asyncio.sleep(2)  # OpenRouter free tier rate limit 방지
         except Exception as exc:
             logger.warning("[generate_summaries] %s 요약 실패: %s", comp.name, exc)
+            await asyncio.sleep(5)  # 실패 시 더 길게 대기 후 다음 컴프 진행
 
     async with AsyncSessionLocal() as session:
         for comp in comps:
@@ -521,16 +533,18 @@ async def generate_summaries_for_top_comps(run_date: str) -> int:
 # 독립 실행 (CLI)
 # ---------------------------------------------------------------------------
 
-async def run(target_date: str | None = None) -> None:
+async def run(target_date: str | None = None, min_samples: int = MIN_SAMPLE_COUNT) -> None:
     """단독 실행 진입점."""
     patch_version = await get_latest_patch_version()
 
     if target_date is None or target_date == "yesterday":
         target_date = (date.today() - timedelta(days=1)).isoformat()
+    elif target_date == "today":
+        target_date = date.today().isoformat()
 
-    logger.info("분석 날짜: %s / 패치: %s", target_date, patch_version)
+    logger.info("분석 날짜: %s / 패치: %s / min_samples: %d", target_date, patch_version, min_samples)
 
-    count = await cluster_and_store(run_date=target_date)
+    count = await cluster_and_store(run_date=target_date, min_samples=min_samples)
     logger.info("클러스터링 완료: %d 컴프", count)
 
     upserted = await calculate_and_upsert_stats(run_date=target_date)
@@ -545,7 +559,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--date",
         default="yesterday",
-        help="분석 날짜 (yesterday 또는 YYYY-MM-DD, 기본값: yesterday)",
+        help="분석 날짜 (yesterday / today / YYYY-MM-DD, 기본값: yesterday)",
+    )
+    parser.add_argument(
+        "--min-samples",
+        type=int,
+        default=MIN_SAMPLE_COUNT,
+        metavar="N",
+        help=f"컴프로 인정할 최소 샘플 수 (기본값: {MIN_SAMPLE_COUNT}, 테스트 시 낮게 설정)",
     )
     return parser.parse_args()
 
@@ -556,5 +577,5 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     args = _parse_args()
-    asyncio.run(run(target_date=args.date))
+    asyncio.run(run(target_date=args.date, min_samples=args.min_samples))
     sys.exit(0)
