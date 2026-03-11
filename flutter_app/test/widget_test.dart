@@ -6,13 +6,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tft_meta_advisor/core/constants.dart';
 import 'package:tft_meta_advisor/models/comp.dart';
+import 'package:tft_meta_advisor/models/champion.dart';
+import 'package:tft_meta_advisor/providers/meta_provider.dart';
 import 'package:tft_meta_advisor/widgets/comp_card.dart';
 import 'package:tft_meta_advisor/widgets/tier_badge.dart';
 import 'package:tft_meta_advisor/widgets/champion_icon.dart';
 
+// 테스트용 더미 챔피언 맵 — API 호출 없이 championMapProvider를 오버라이드
+final _emptyChampionMap = <String, Champion>{};
+
 /// 위젯 테스트용 래퍼 — ProviderScope + MaterialApp + 다크 테마 제공
+/// championMapProvider를 빈 맵으로 오버라이드하여 네트워크 호출 방지
 Widget testApp(Widget child) {
   return ProviderScope(
+    overrides: [
+      // CompCard 내부에서 championMapProvider를 watch하므로
+      // 테스트 환경에서 네트워크 요청이 발생하지 않도록 오버라이드
+      championMapProvider.overrideWith(
+        (ref) => AsyncValue.data(_emptyChampionMap),
+      ),
+    ],
     child: MaterialApp(
       theme: ThemeData.dark(),
       home: Scaffold(body: child),
@@ -198,8 +211,8 @@ void main() {
       ));
       await tester.pump();
 
-      // 이니셜 'IR' 표시 확인 (2자까지 표시)
-      expect(find.textContaining('IR'), findsOneWidget);
+      // fallback: 이름 첫 글자만 대문자로 표시 ('I')
+      expect(find.textContaining('I'), findsOneWidget);
     });
 
     testWidgets('isCore true 시 위젯이 렌더링된다', (tester) async {

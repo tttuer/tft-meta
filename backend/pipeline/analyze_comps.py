@@ -455,11 +455,15 @@ async def calculate_and_upsert_stats(run_date: str) -> int:
     return len(comps)
 
 
-async def generate_summaries_for_top_comps(run_date: str) -> int:
+async def generate_summaries_for_top_comps(run_date: str, ai_limit: int = TOP_COMP_COUNT) -> int:
     """
     Airflow generate_ai_summary 태스크 진입점.
     상위 컴프에 AI 전략 요약을 생성하고 comps.ai_summary 컬럼을 갱신.
     오늘/전날 비교를 통한 메타 변화 요약도 생성.
+
+    Args:
+        run_date: 분석 날짜
+        ai_limit: AI 요약을 생성할 최대 컴프 수 (테스트 시 낮게 설정)
 
     Returns:
         AI 요약이 생성된 컴프 수.
@@ -474,7 +478,7 @@ async def generate_summaries_for_top_comps(run_date: str) -> int:
             select(Comp)
             .where(Comp.patch_version == patch_version)
             .order_by(Comp.win_rate.desc())
-            .limit(TOP_COMP_COUNT)
+            .limit(ai_limit)
         )
         comps = result.scalars().all()
 
@@ -495,10 +499,10 @@ async def generate_summaries_for_top_comps(run_date: str) -> int:
             )
             comp.ai_summary = summary
             updated += 1
-            await asyncio.sleep(2)  # OpenRouter free tier rate limit 방지
+            await asyncio.sleep(4)  # OpenRouter free tier: 20 RPM = 호출당 최소 3초, 여유 4초
         except Exception as exc:
             logger.warning("[generate_summaries] %s 요약 실패: %s", comp.name, exc)
-            await asyncio.sleep(5)  # 실패 시 더 길게 대기 후 다음 컴프 진행
+            await asyncio.sleep(10)  # 429 발생 시 더 길게 대기
 
     async with AsyncSessionLocal() as session:
         for comp in comps:
@@ -533,7 +537,11 @@ async def generate_summaries_for_top_comps(run_date: str) -> int:
 # 독립 실행 (CLI)
 # ---------------------------------------------------------------------------
 
-async def run(target_date: str | None = None, min_samples: int = MIN_SAMPLE_COUNT) -> None:
+async def run(
+    target_date: str | None = None,
+    min_samples: int = MIN_SAMPLE_COUNT,
+    ai_limit: int = TOP_COMP_COUNT,
+) -> None:
     """단독 실행 진입점."""
     patch_version = await get_latest_patch_version()
 
@@ -542,7 +550,10 @@ async def run(target_date: str | None = None, min_samples: int = MIN_SAMPLE_COUN
     elif target_date == "today":
         target_date = date.today().isoformat()
 
-    logger.info("분석 날짜: %s / 패치: %s / min_samples: %d", target_date, patch_version, min_samples)
+    logger.info(
+        "분석 날짜: %s / 패치: %s / min_samples: %d / ai_limit: %d",
+        target_date, patch_version, min_samples, ai_limit,
+    )
 
     count = await cluster_and_store(run_date=target_date, min_samples=min_samples)
     logger.info("클러스터링 완료: %d 컴프", count)
@@ -550,7 +561,7 @@ async def run(target_date: str | None = None, min_samples: int = MIN_SAMPLE_COUN
     upserted = await calculate_and_upsert_stats(run_date=target_date)
     logger.info("통계 계산 완료: %d 컴프", upserted)
 
-    updated = await generate_summaries_for_top_comps(run_date=target_date)
+    updated = await generate_summaries_for_top_comps(run_date=target_date, ai_limit=ai_limit)
     logger.info("AI 요약 완료: %d 컴프", updated)
 
 
@@ -568,6 +579,13 @@ def _parse_args() -> argparse.Namespace:
         metavar="N",
         help=f"컴프로 인정할 최소 샘플 수 (기본값: {MIN_SAMPLE_COUNT}, 테스트 시 낮게 설정)",
     )
+    parser.add_argument(
+        "--ai-limit",
+        type=int,
+        default=TOP_COMP_COUNT,
+        metavar="N",
+        help=f"AI 요약을 생성할 최대 컴프 수 (기본값: {TOP_COMP_COUNT}, 테스트 시 3 이하 권장)",
+    )
     return parser.parse_args()
 
 
@@ -577,5 +595,5 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     args = _parse_args()
-    asyncio.run(run(target_date=args.date, min_samples=args.min_samples))
+    asyncio.run(run(target_date=args.date, min_samples=args.min_samples, ai_limit=args.ai_limit))
     sys.exit(0)

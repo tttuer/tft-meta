@@ -8,6 +8,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://tft_user:password@db:5432/tft_meta
       REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ALL: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -26,6 +27,7 @@ services:
       POSTGRES_DB: tft_meta
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tft_user -d tft_meta"]
       interval: 5s

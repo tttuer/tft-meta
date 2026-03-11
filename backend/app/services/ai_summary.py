@@ -1,6 +1,9 @@
 """
-OpenRouter AI 요약 서비스.
-model: meta-llama/llama-3.3-70b-instruct:free
+AI 요약 서비스.
+
+우선순위:
+  1. GitHub Copilot API (GITHUB_TOKEN 설정 시) — gpt-4o-mini, 쿼터 차감 없음
+  2. OpenRouter (OPENROUTER_API_KEY 설정 시) — 폴백
 
 제공 기능:
   - generate_comp_summary: 컴프 단건 요약 (기존)
@@ -9,6 +12,7 @@ model: meta-llama/llama-3.3-70b-instruct:free
   - generate_meta_change_summary: 전날 대비 메타 변화 요약 (STEP 2 신규)
 """
 import logging
+import time
 
 import httpx
 
@@ -17,13 +21,64 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
+COPILOT_CHAT_URL = "https://api.githubcopilot.com/chat/completions"
+
+_copilot_token: str = ""
+_copilot_token_expires_at: float = 0.0
 
 
-async def _chat(messages: list[dict], max_tokens: int = 512) -> str:
+async def _get_copilot_token() -> str:
+    """ghu_ OAuth 토큰으로 Copilot 세션 토큰 발급 (30분마다 자동 갱신)."""
+    global _copilot_token, _copilot_token_expires_at
+
+    if _copilot_token and time.time() < _copilot_token_expires_at - 60:
+        return _copilot_token
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            COPILOT_TOKEN_URL,
+            headers={
+                "Authorization": f"token {settings.github_token}",
+                "Accept": "application/json",
+                "Editor-Version": "vscode/1.85.1",
+                "Editor-Plugin-Version": "copilot-chat/0.12.2",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    _copilot_token = data["token"]
+    _copilot_token_expires_at = data.get("expires_at", time.time() + 1800)
+    logger.debug("Copilot 세션 토큰 갱신 완료")
+    return _copilot_token
+
+
+async def _chat_copilot(messages: list[dict], max_tokens: int = 512) -> str:
+    """GitHub Copilot Chat Completions API 호출."""
+    token = await _get_copilot_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Editor-Version": "vscode/1.85.1",
+        "Editor-Plugin-Version": "copilot-chat/0.12.2",
+        "OpenAI-Intent": "conversation-panel",
+    }
+    payload = {
+        "model": settings.github_copilot_model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(COPILOT_CHAT_URL, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+async def _chat_openrouter(messages: list[dict], max_tokens: int = 512) -> str:
     """OpenRouter Chat Completions API 호출."""
-    if not settings.openrouter_api_key:
-        return "OpenRouter API 키가 설정되지 않았습니다."
-
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "Content-Type": "application/json",
@@ -36,13 +91,20 @@ async def _chat(messages: list[dict], max_tokens: int = 512) -> str:
         "max_tokens": max_tokens,
         "temperature": 0.7,
     }
-
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(OPENROUTER_URL, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
-
     return data["choices"][0]["message"]["content"].strip()
+
+
+async def _chat(messages: list[dict], max_tokens: int = 512) -> str:
+    """AI 호출 — GitHub Copilot 우선, 없으면 OpenRouter 폴백."""
+    if settings.github_token:
+        return await _chat_copilot(messages, max_tokens)
+    if settings.openrouter_api_key:
+        return await _chat_openrouter(messages, max_tokens)
+    return "AI API 키가 설정되지 않았습니다. GITHUB_TOKEN 또는 OPENROUTER_API_KEY를 설정하세요."
 
 
 # ---------------------------------------------------------------------------
