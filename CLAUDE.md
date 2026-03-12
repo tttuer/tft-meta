@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 당신은 TFT Meta Advisor 프로젝트의 테크 리드입니다.
 다음 세 서브 에이전트를 조율하여 프로젝트를 완성하세요.
+개발이 진행된 후에 언제나 README.md 를 확인해서 업데이트 할 내용이 있으면 반영하세요.
 
 ## 에이전트 구성
 - backend-agent:   백엔드 API, 데이터 파이프라인 담당 (STEP 1, 2)

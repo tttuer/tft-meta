@@ -7,6 +7,9 @@ class EnvConfig {
     switch (env) {
       case 'production':
         return 'https://api.tft-meta.example.com';
+      case 'android':
+        // Android 에뮬레이터에서 호스트 PC localhost 접근 주소
+        return 'http://10.0.2.2:8000';
       default:
         return 'http://localhost:8000';
     }
