@@ -239,36 +239,49 @@ def _core_units_by_level(cluster: dict) -> dict[str, list[str]]:
 
 def _board_positions(cluster: dict) -> list[dict]:
     """
-    상위 10% 순위 참가자의 배치 데이터 평균을 7×4 그리드 좌표로 변환.
+    코스트(rarity) 기반으로 7×4 그리드에 챔피언 배치.
+
+    Riot API 매치 데이터에는 실제 보드 좌표가 없으므로
+    rarity(코스트 카테고리)를 row에 매핑하여 의미 있는 배치를 생성한다.
+
+    배치 원칙:
+      rarity 6 (5코스트 캐리) → row 0 (후열)
+      rarity 4 (4코스트)      → row 1
+      rarity 2 (3코스트)      → row 2
+      rarity 0~1 (1~2코스트 탱커) → row 3 (전열)
     """
     participants = cluster["participants"]
-    placements = sorted(p.get("placement", 9) for p in participants)
-    cutoff_idx = max(1, int(len(placements) * TOP_PLACEMENT_PCT))
-    cutoff_placement = placements[cutoff_idx - 1]
 
-    top_players = [p for p in participants if p.get("placement", 9) <= cutoff_placement]
-    if not top_players:
-        top_players = participants
-
-    # 챔피언별 평균 (row, col) 집계
-    champ_positions: dict[str, list[tuple[int, int]]] = defaultdict(list)
-    for p in top_players:
+    # 챔피언별 rarity 최빈값 집계
+    champ_rarity: dict[str, list[int]] = defaultdict(list)
+    for p in participants:
         for unit in p.get("units", []):
             cid = unit.get("character_id")
-            row = unit.get("rarity", 0)   # 일부 Riot API 응답에 row 포함 (없으면 rarity 대체)
-            col = unit.get("tier", 0)     # 일부 Riot API 응답에 col 포함 (없으면 tier 대체)
-            # 실제 API 필드 이름이 다를 수 있으나 normalize
-            real_row = unit.get("row", row)
-            real_col = unit.get("col", col)
+            rarity = unit.get("rarity", 2)
             if cid:
-                champ_positions[cid].append((real_row, real_col))
+                champ_rarity[cid].append(rarity)
 
+    if not champ_rarity:
+        return []
+
+    # rarity → row 매핑
+    RARITY_TO_ROW: dict[int, int] = {0: 3, 1: 3, 2: 2, 4: 1, 6: 0}
+
+    # 행별 챔피언 그룹화 (rarity 최빈값 사용)
+    row_groups: dict[int, list[str]] = defaultdict(list)
+    for cid, rarities in champ_rarity.items():
+        most_common = Counter(rarities).most_common(1)[0][0]
+        row = RARITY_TO_ROW.get(most_common, 2)
+        row_groups[row].append(cid)
+
+    # 각 행 내 열을 0~6 범위에 균등 배분
     positions: list[dict] = []
-    for cid, coords in champ_positions.items():
-        avg_row = sum(r for r, _ in coords) / len(coords)
-        avg_col = sum(c for _, c in coords) / len(coords)
-        grid_r, grid_c = _board_position_to_grid(round(avg_row), round(avg_col))
-        positions.append({"champion_id": cid, "row": grid_r, "col": grid_c})
+    for row in sorted(row_groups):
+        champs = row_groups[row]
+        n = len(champs)
+        for i, cid in enumerate(champs):
+            col = round(i * 6 / (n - 1)) if n > 1 else 3  # 1명이면 중앙(3)
+            positions.append({"champion_id": cid, "row": row, "col": col})
 
     return positions
 

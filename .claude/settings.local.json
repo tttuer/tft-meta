@@ -4,7 +4,10 @@
       "Bash(cd /c/Users/admin/StudioProjects/tft-meta-advisor/flutter_app && flutter pub get 2>&1)",
       "Bash(cd /c/Users/admin/StudioProjects/tft-meta-advisor/flutter_app && flutter analyze 2>&1)",
       "Bash(cd /c/Users/admin/StudioProjects/tft-meta-advisor/flutter_app && flutter test 2>&1)",
-      "Bash(cd /c/Users/admin/StudioProjects/tft-meta-advisor/flutter_app && flutter analyze && flutter test 2>&1)"
+      "Bash(cd /c/Users/admin/StudioProjects/tft-meta-advisor/flutter_app && flutter analyze && flutter test 2>&1)",
+      "WebSearch",
+      "WebFetch(domain:developer.riotgames.com)",
+      "WebFetch(domain:gist.github.com)"
     ]
   }
 }

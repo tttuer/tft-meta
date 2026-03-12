@@ -25,21 +25,26 @@ class BoardWidget extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
-        final hexW = (availableWidth / BoardConstants.cols).clamp(
-          40.0,
+        // 짝수 행의 0.5칸 오프셋을 고려: 실제 필요 너비 = hexW * 7.5 + 16(패딩)
+        // hexW = (availableWidth - 16) / 7.5 로 계산해야 overflow 없음
+        final hexW = ((availableWidth - 16) / 7.5).clamp(
+          30.0,
           BoardConstants.hexSize,
         );
         final hexH = hexW * 0.866; // sqrt(3)/2 — 정육각형 비율
         final boardHeight = hexH * (BoardConstants.rows + 0.5) + 16;
 
+        // 실제 보드 너비: 7칸 + 짝수행 0.5칸 오프셋 + 양쪽 패딩
+        final boardWidth = hexW * 7.5 + 16;
+
         return SizedBox(
-          width: availableWidth,
+          width: boardWidth,
           height: boardHeight,
           child: Stack(
             children: [
               // 배경 그리드
               CustomPaint(
-                size: Size(availableWidth, boardHeight),
+                size: Size(boardWidth, boardHeight),
                 painter: _HexGridPainter(
                   hexW: hexW,
                   hexH: hexH,
@@ -48,7 +53,7 @@ class BoardWidget extends StatelessWidget {
                 ),
               ),
               // 챔피언 이미지 오버레이 (네트워크 이미지는 CustomPainter에서 직접 처리 불가)
-              ..._buildChampionOverlays(availableWidth, hexW, hexH),
+              ..._buildChampionOverlays(boardWidth, hexW, hexH),
             ],
           ),
         );

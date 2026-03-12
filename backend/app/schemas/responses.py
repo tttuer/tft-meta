@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 # --- Champion ---
@@ -15,6 +15,7 @@ class ChampionSchema(BaseModel):
     best_items: dict
     item_reasoning: dict
     image_url: str | None
+    splash_url: str | None = None
 
 
 # --- Augment ---
@@ -43,6 +44,20 @@ class CompSummarySchema(BaseModel):
     sample_count: int
     patch_version: str
     updated_at: datetime
+    core_units: dict  # {"6": [...], "7": [...], "8": [...], "9": [...]}
+
+    @computed_field
+    @property
+    def preview_champions(self) -> list[str]:
+        """최고 레벨의 챔피언 ID 목록 — 카드 UI 미리보기용."""
+        if not self.core_units:
+            return []
+        level_keys = [k for k in self.core_units if str(k).isdigit()]
+        if not level_keys:
+            return []
+        highest = str(max(int(k) for k in level_keys))
+        champs = self.core_units.get(highest, [])
+        return [str(c) for c in champs] if isinstance(champs, list) else []
 
 
 class CompDetailSchema(CompSummarySchema):

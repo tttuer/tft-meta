@@ -41,6 +41,26 @@ REGIONS = ["kr", "na1", "euw1"]
 # asyncio.run() 래퍼를 포함한다.
 # ---------------------------------------------------------------------------
 
+def task_sync_images(**context) -> None:
+    """패치 버전 변경 시 챔피언/아이템/증강 이미지 URL 동기화."""
+    import asyncio
+
+    from app.services.image_sync import check_patch_changed, sync_all_images
+    from app.services.riot_api import get_latest_patch_version
+    from app.services.slack_notifier import notify_failure
+
+    try:
+        if asyncio.run(check_patch_changed()):
+            patch_version = asyncio.run(get_latest_patch_version())
+            asyncio.run(sync_all_images(patch_version))
+            logger.info("[sync_images] 이미지 동기화 완료")
+        else:
+            logger.info("[sync_images] 패치 변경 없음 — 동기화 스킵")
+    except Exception as exc:
+        asyncio.run(notify_failure("sync_images", str(exc)))
+        raise
+
+
 def task_fetch_matches(**context) -> None:
     """
     Riot API에서 KR/NA/EUW 마스터+ 매치 ID를 수집하고 match_raw 테이블에 저장.
@@ -221,6 +241,11 @@ with DAG(
     tags=["tft", "meta", "pipeline"],
 ) as dag:
 
+    sync_images = PythonOperator(
+        task_id="sync_images",
+        python_callable=task_sync_images,
+    )
+
     fetch_matches = PythonOperator(
         task_id="fetch_matches",
         python_callable=task_fetch_matches,
@@ -259,7 +284,8 @@ with DAG(
 
     # 의존성 체인
     (
-        fetch_matches
+        sync_images
+        >> fetch_matches
         >> parse_matches
         >> cluster_comps
         >> calculate_stats

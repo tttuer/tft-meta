@@ -91,25 +91,33 @@ class CompCard extends ConsumerWidget {
   }
 
   Widget _buildChampionRow(Map<String, Champion> championMap) {
-    // 코어 챔피언 아이콘 표시 (최대 7개)
-    final champions = championMap.values.take(7).toList();
+    // 이 컴프의 최종덱 챔피언만 표시 (최대 9개)
+    final champions = comp.previewChampions
+        .map((id) => championMap[id])
+        .where((c) => c != null)
+        .cast<Champion>()
+        .toList();
+
     if (champions.isEmpty) return _buildChampionRowEmpty();
 
     return SizedBox(
       height: 48,
-      child: Row(
-        children: champions.map((champion) {
-          return Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.xs),
-            child: ChampionIcon(
-              championId: champion.id,
-              championName: champion.name,
-              cost: champion.cost,
-              imageUrl: champion.imageUrl,
-              size: 44,
-            ),
-          );
-        }).toList(),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: champions.map((champion) {
+            return Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: ChampionIcon(
+                championId: champion.id,
+                championName: champion.name,
+                cost: champion.cost,
+                imageUrl: champion.imageUrl,
+                size: 44,
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

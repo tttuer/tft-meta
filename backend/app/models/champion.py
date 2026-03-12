@@ -15,3 +15,4 @@ class Champion(Base):
     best_items: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     item_reasoning: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    splash_url: Mapped[str | None] = mapped_column(String, nullable=True)

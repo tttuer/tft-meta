@@ -4,11 +4,13 @@ import 'package:shimmer/shimmer.dart';
 import '../core/constants.dart';
 import '../models/comp.dart';
 import '../models/augment.dart';
+import '../models/champion.dart';
 import '../providers/comp_provider.dart';
 import '../providers/meta_provider.dart';
 import '../widgets/board_painter.dart';
 import '../widgets/champion_icon.dart';
 import '../widgets/item_icon.dart';
+import '../widgets/augment_icon.dart';
 import '../widgets/tier_badge.dart';
 
 class CompDetailScreen extends ConsumerStatefulWidget {
@@ -121,6 +123,12 @@ class _BoardTab extends ConsumerWidget {
     final championMapAsync = ref.watch(championMapProvider);
     final level = ref.watch(selectedLevelProvider(comp.id));
 
+    // 현재 레벨의 챔피언 ID 목록 (core_units: {"6": [...], "7": [...], ...})
+    final levelUnits = comp.coreUnits[level.toString()];
+    final levelChampIds = levelUnits is List
+        ? levelUnits.map((e) => e.toString()).toSet()
+        : <String>{};
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
@@ -155,6 +163,14 @@ class _BoardTab extends ConsumerWidget {
                   ref.read(selectedLevelProvider(comp.id).notifier).state = v;
                 },
               ),
+              const Spacer(),
+              Text(
+                '${levelChampIds.length}명',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: AppFontSizes.sm,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -172,10 +188,15 @@ class _BoardTab extends ConsumerWidget {
             child: boardAsync.when(
               data: (board) => championMapAsync.when(
                 data: (championMap) => BoardWidget(
-                  positions: board.boardPositions,
+                  // 현재 레벨 챔피언만 보드에 표시
+                  positions: board.boardPositions
+                      .where((p) =>
+                          levelChampIds.isEmpty ||
+                          levelChampIds.contains(p.championId))
+                      .toList(),
                   championMap: championMap,
                   level: level,
-                  coreChampionIds: _getCoreIds(comp),
+                  coreChampionIds: levelChampIds,
                 ),
                 loading: () => _boardSkeleton(),
                 error: (_, __) => _boardSkeleton(),
@@ -201,7 +222,7 @@ class _BoardTab extends ConsumerWidget {
             spacing: AppSpacing.md,
             runSpacing: AppSpacing.sm,
             children: [
-              _legendItem(AppColors.gold, '코어 챔피언'),
+              _legendItem(AppColors.gold, '현재 레벨 챔피언'),
               ...costColors.entries.map(
                 (e) => _legendItem(e.value, '${e.key}코스트'),
               ),
@@ -210,10 +231,6 @@ class _BoardTab extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  Set<String> _getCoreIds(CompDetail comp) {
-    return comp.coreUnits.keys.toSet();
   }
 
   Widget _boardSkeleton() {
@@ -266,41 +283,92 @@ class _ItemsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final championMapAsync = ref.watch(championMapProvider);
+    final level = ref.watch(selectedLevelProvider(comp.id));
+
+    // 현재 레벨의 챔피언 ID 목록
+    final levelUnits = comp.coreUnits[level.toString()];
+    final levelChampIds = levelUnits is List
+        ? levelUnits.map((e) => e.toString()).toList()
+        : <String>[];
 
     return championMapAsync.when(
       data: (championMap) {
-        final coreUnits = comp.coreUnits;
-        if (coreUnits.isEmpty) {
-          return const Center(
-            child: Text(
-              '아이템 데이터가 없습니다.',
-              style: TextStyle(color: AppColors.textSecondary),
+        return Column(
+          children: [
+            // 레벨 선택 (보드 탭과 동기화됨)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+              child: Row(
+                children: [
+                  const Text(
+                    '레벨 선택:',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: AppFontSizes.md,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  DropdownButton<int>(
+                    value: level,
+                    dropdownColor: AppColors.surface,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: AppFontSizes.md,
+                    ),
+                    items: [6, 7, 8, 9]
+                        .map((l) => DropdownMenuItem(
+                              value: l,
+                              child: Text('레벨 $l'),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      ref
+                          .read(selectedLevelProvider(comp.id).notifier)
+                          .state = v;
+                    },
+                  ),
+                ],
+              ),
             ),
-          );
-        }
+            if (levelChampIds.isEmpty)
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    '챔피언 데이터가 없습니다.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  itemCount: levelChampIds.length,
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (context, i) {
+                    final championId = levelChampIds[i];
+                    final champion = championMap[championId];
 
-        return ListView.separated(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          itemCount: coreUnits.length,
-          separatorBuilder: (_, __) => const Divider(),
-          itemBuilder: (context, i) {
-            final championId = coreUnits.keys.elementAt(i);
-            final unitData = coreUnits[championId];
-            final champion = championMap[championId];
+                    // 챔피언의 best_items에서 아이템 목록 조회
+                    final itemsList = champion?.bestItems['items'];
+                    final items = itemsList is List
+                        ? itemsList.map((e) => e.toString()).toList()
+                        : <String>[];
+                    final reasoning =
+                        champion?.bestItems['reasoning'] as String?;
 
-            final items = unitData is Map
-                ? (unitData['items'] as List<dynamic>? ?? [])
-                : <dynamic>[];
-            final reasoning =
-                unitData is Map ? (unitData['reasoning'] as String?) : null;
-
-            return _ChampionItemRow(
-              championId: championId,
-              champion: champion,
-              items: items.map((e) => e.toString()).toList(),
-              reasoning: reasoning,
-            );
-          },
+                    return _ChampionItemRow(
+                      championId: championId,
+                      champion: champion,
+                      items: items,
+                      reasoning: reasoning,
+                    );
+                  },
+                ),
+              ),
+          ],
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -314,7 +382,7 @@ class _ItemsTab extends ConsumerWidget {
 
 class _ChampionItemRow extends StatelessWidget {
   final String championId;
-  final dynamic champion;
+  final Champion? champion;
   final List<String> items;
   final String? reasoning;
 
@@ -327,9 +395,9 @@ class _ChampionItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cost = champion?.cost as int? ?? 1;
-    final name = champion?.name as String? ?? championId;
-    final imageUrl = champion?.imageUrl as String?;
+    final cost = champion?.cost ?? 1;
+    final name = champion?.name ?? championId;
+    final imageUrl = champion?.imageUrl;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -500,25 +568,12 @@ class _AugmentCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // 증강 이미지 또는 티어 배지
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _tierColor.withAlpha(30),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _tierColor, width: 1.5),
-            ),
-            child: Center(
-              child: Text(
-                augment.tier.substring(0, 1),
-                style: TextStyle(
-                  color: _tierColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: AppFontSizes.lg,
-                ),
-              ),
-            ),
+          // 증강 아이콘 (티어별 프레임 + Community Dragon 이미지)
+          AugmentIcon(
+            tier: augment.tier,
+            imageUrl: augment.imageUrl,
+            name: augment.name,
+            size: 44,
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(

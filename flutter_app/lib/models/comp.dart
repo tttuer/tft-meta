@@ -12,6 +12,7 @@ class CompSummary {
   final int sampleCount;
   final String patchVersion;
   final DateTime updatedAt;
+  final List<String> previewChampions; // 최고 레벨 챔피언 ID 목록
 
   const CompSummary({
     required this.id,
@@ -24,6 +25,7 @@ class CompSummary {
     required this.sampleCount,
     required this.patchVersion,
     required this.updatedAt,
+    this.previewChampions = const [],
   });
 
   factory CompSummary.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,10 @@ class CompSummary {
       sampleCount: json['sample_count'] as int,
       patchVersion: json['patch_version'] as String,
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      previewChampions: (json['preview_champions'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 
@@ -52,6 +58,7 @@ class CompSummary {
         'sample_count': sampleCount,
         'patch_version': patchVersion,
         'updated_at': updatedAt.toIso8601String(),
+        'preview_champions': previewChampions,
       };
 }
 

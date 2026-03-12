@@ -67,7 +67,43 @@ curl http://localhost:8000/health
 
 ## 데이터 투입 방법
 
-앱을 띄우려면 컴프 데이터가 필요합니다. **더미 데이터** 또는 **실 데이터** 중 선택하세요.
+앱을 띄우려면 **이미지 동기화 → 컴프 데이터** 순서로 투입이 필요합니다.
+
+### Step 0. 이미지 URL 동기화 (필수 — 최초 1회 또는 패치 변경 시)
+
+챔피언·아이템·증강 이미지 URL을 DB에 저장합니다.
+이미지 파일은 다운로드하지 않고 CDN URL만 저장합니다.
+
+```bash
+cd backend
+
+# 패치 변경 여부 확인만
+uv run python -m app.services.image_sync --check
+
+# 패치 변경 시에만 동기화 (자동 판단)
+uv run python -m app.services.image_sync
+
+# 강제 전체 동기화 (패치 변경 무관)
+uv run python -m app.services.image_sync --force
+```
+
+| 옵션 | 설명 |
+|------|------|
+| _(없음)_ | 패치 변경 감지 시에만 동기화 |
+| `--force` | 패치 변경 여부와 무관하게 강제 동기화 |
+| `--check` | 패치 버전 확인만 (DB 변경 없음) |
+
+**이미지 소스:**
+
+| 데이터 | 소스 | 이유 |
+|--------|------|------|
+| 챔피언 이미지·코스트·특성 | Community Dragon (`cdragon/tft/en_us.json`) | 현재 세트 정확한 데이터 제공 |
+| 아이템 이미지 | Data Dragon (Riot 공식) | TFT 아이템은 DDragon이 정확 |
+| 증강 이미지 | Community Dragon (`cdragon/tft/en_us.json`) | 증강 데이터는 CDragon만 제공 |
+
+> **챔피언 필터**: `cost < 1` 또는 `traits` 없는 항목(엘더 드래곤, 아타칸, 골렘, 타워 등 환경 유닛)은 자동 제외됩니다.
+
+---
 
 ### A) 더미 데이터 (빠름 — Riot API 키 불필요)
 
@@ -77,6 +113,8 @@ uv run python seed_data.py
 ```
 
 이렐리아 전사(S), 럭스 마법사(A), 카이사 사수(A) 3개 컴프가 삽입됩니다.
+
+> 이미지를 보려면 Step 0의 이미지 동기화를 먼저 실행하세요.
 
 ---
 
@@ -136,8 +174,9 @@ uv run python -m pipeline.analyze_comps --date today
 # 터미널 1: 백엔드 유지
 cd backend && docker compose up -d db redis api
 
-# 터미널 2: 수집 → 분석 순서대로
+# 터미널 2: 이미지 → 수집 → 분석 순서
 cd backend
+uv run python -m app.services.image_sync --force          # 이미지 URL 동기화
 uv run python -m pipeline.fetch_matches --region kr --limit 20
 uv run python -m pipeline.analyze_comps --date today --min-samples 5 --ai-limit 3
 ```
@@ -164,15 +203,41 @@ flutter pub get
 
 ```bash
 cd flutter_app
-flutter test      # 24개 위젯 테스트
+flutter test      # 위젯 테스트
 flutter analyze   # 정적 분석 (No issues 목표)
 ```
 
 ---
 
-## API 문서
+## 앱 주요 기능
 
-로컬 실행 후 http://localhost:8000/docs (Swagger UI)
+### 홈 화면
+- 추천 컴프 TOP 5 목록 (각 카드에 **해당 컴프의 최종덱 챔피언 초상화** 표시)
+- AI 메타 요약 배너 (접기/펼치기)
+- 현재 패치 버전 표시
+
+### 컴프 목록
+- 승률 / 픽률 / 평균 순위 기준 정렬
+- 티어(S/A/B/C) 필터
+- 검색
+
+### 컴프 상세 (4개 탭)
+
+**배치 탭**
+- 레벨 선택 (6/7/8/9) → 해당 레벨 챔피언만 7×4 헥사곤 보드에 표시
+- 코스트별 테두리 색상 구분
+
+**아이템 탭**
+- 레벨 선택과 동기화 → 선택 레벨 챔피언 목록 표시
+- 챔피언별 추천 아이템 (AI 분석 시 자동 채워짐)
+
+**증강 탭**
+- 스테이지별(2-1 Silver / 3-2 Gold / 4-2 Prismatic) 추천 증강
+- 티어별 테두리 + Community Dragon 이미지
+
+**진입조건 탭**
+- 컴프 진입 조건 목록
+- AI 전략 요약
 
 ---
 
@@ -184,7 +249,20 @@ docker compose up -d airflow-init airflow-webserver airflow-scheduler
 # http://localhost:8080  (admin / admin)
 ```
 
-DAG `tft_daily_meta_update`가 매일 04:00 KST 자동 실행됩니다.
+DAG `tft_daily_meta_update` 파이프라인:
+
+```
+sync_images → fetch_matches → parse_matches → cluster_comps
+  → calculate_stats → generate_ai_summary → update_cache → send_push_notification
+```
+
+매일 04:00 KST 자동 실행. `sync_images` 태스크가 패치 변경 감지 시 이미지 동기화를 자동으로 선행합니다.
+
+---
+
+## API 문서
+
+로컬 실행 후 http://localhost:8000/docs (Swagger UI)
 
 ---
 
@@ -223,8 +301,8 @@ AI 요약 기능은 **GitHub Copilot(우선)** 또는 **OpenRouter(폴백)** 중
 
 > 전제조건: GitHub Copilot **유료 구독** 계정
 
-`gh auth login`으로 받은 토큰은 동작하지 않습니다.
-VS Code Copilot 확장의 Client ID로 발급된 토큰이어야 합니다. 전용 스크립트를 사용하세요.
+`gh auth login`으로 받은 `gho_` 토큰은 동작하지 않습니다.
+VS Code Copilot Client ID로 발급된 토큰이어야 합니다. 전용 스크립트를 사용하세요.
 
 ```bash
 cd backend
